@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RKE2 Deployment Template
+
+
+Parameters:
+ 
+  Username: 
+    Type: String
+    Default: "aouahou"
+    Description: Your name for tagging
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select an existing VPC
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select a Subnet inside the VPC
+
+  SubnetCidr:
+    Type: String
+    Default: "10.10.0.0/16"
+    Description: CIDR block for subnet access rules
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Select an existing EC2 Key Pair
+
+  InstanceType:
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+      - t2.medium
+    Description: EC2 instance type
+
+Resources:
+
+  RKE2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Enable SSH and NodePort
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 30080
+          ToPort: 30080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref SubnetCidr
+      Tags:
+        - Key: Name
+          Value: !Sub "${Username}-RKE2-SG"
+
+  MasterEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref KeyName
+      ImageId: ami-075686beab831bb7f # Ubuntu 22.04 LTS
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref RKE2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Username}-RKE2-Master"
+      UserData:
+       Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          sudo curl -sfL https://get.rke2.io | sudo sh -
+          sudo systemctl enable rke2-server.service
+          sudo systemctl start rke2-server.service
+
+
+  WorkerEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref KeyName
+      ImageId: ami-075686beab831bb7f
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref RKE2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Username}-RKE2-Worker"
+      UserData:
+         Fn::Base64: !Sub |
+          set -e
+          sudo curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_TYPE="agent" sh -
+          sudo systemctl enable rke2-agent.service
+          sudo mkdir -p /etc/rancher/rke2/
